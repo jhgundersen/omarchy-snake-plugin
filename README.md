@@ -73,10 +73,11 @@ Two modes, swap with `m`:
 
 ## Persistence
 
-Your best score, lifetime playtime (shown off in some of the game-over
-lines), and chosen food skin survive shell restarts — kept as JSON in
-`~/.local/state/omarchy/plugins/jhgundersen.snake/state.json`, written on
-death, on closing the panel, and on changing the food skin.
+Your best score (tracked separately for Levels and Endless, since they're
+not really comparable), lifetime playtime (shown off in some of the
+game-over lines), and chosen food skin survive shell restarts — kept as
+JSON in `~/.local/state/omarchy/plugins/jhgundersen.snake/state.json`,
+written on death, on closing the panel, and on changing the food skin.
 
 ## Files
 

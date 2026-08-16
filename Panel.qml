@@ -30,12 +30,16 @@ import qs.Commons
 // hitting one ends the run) and wrapping (stepping off one side re-enters
 // from the opposite side, snake-cube style) in both Levels and Endless.
 //
-// `best`, `totalSeconds` (lifetime playtime, ticking alongside
-// elapsedSeconds - see the 1s Timer), and `foodStyleIndex` (last food skin
-// picked - see cycleFoodStyle()) persist across shell restarts as JSON
-// under this plugin's own state directory (see stateDir/statePath below),
-// loaded once at startup and rewritten on every death, panel close, and
-// food-skin change.
+// `bestLevels`/`bestEndless` (tracked separately - `best` below just reads
+// whichever one the current mode uses, they aren't comparable scores),
+// `totalSeconds` (lifetime playtime, ticking alongside elapsedSeconds -
+// see the 1s Timer), and `foodStyleIndex` (last food skin picked - see
+// cycleFoodStyle()) persist across shell restarts as JSON under this
+// plugin's own state directory (see stateDir/statePath below). Loaded
+// once at startup and rewritten on every death, panel close, and
+// food-skin change; every write merges against the last known on-disk
+// values (see diskState) so a save can never regress a number another
+// writer already persisted.
 Panel {
   id: root
   moduleName: "jhgundersen.snake"
@@ -54,7 +58,12 @@ Panel {
   property var directionQueue: []
   property var food: null
   property int score: 0
-  property int best: 0
+  // Separate records per mode - a Levels run and an Endless run aren't
+  // comparable (obstacles vs. none), so beating your Endless best
+  // shouldn't require out-scoring your Levels best or vice versa.
+  property int bestLevels: 0
+  property int bestEndless: 0
+  readonly property int best: root.endlessMode ? bestEndless : bestLevels
   property bool stateLoaded: false
   property bool running: false
   property bool gameOver: false
@@ -165,7 +174,12 @@ Panel {
     "{time}. The agent finished. You did not.",
     "Achievement unlocked: {time} of avoiding real work.",
     "{time}. Worth it? Ask again after the next run.",
-    "A solid {time}. The snake deserved better."
+    "A solid {time}. The snake deserved better.",
+    "Nokia 3310s have survived falls from buildings. This run didn't survive {time}.",
+    "MacGyver could disarm a bomb in {time}. You could not disarm a wall.",
+    "Set phasers to 'mildly disappointed'. {time} logged, captain.",
+    "In Tetris, the walls are the point. Here, {time} says you disagree.",
+    "Resistance to that wall was not, in fact, futile. It won in {time}."
   ]
   readonly property var scoreQuips: [
     "Score: {score}. Groundbreaking. Truly.",
@@ -177,14 +191,24 @@ Panel {
     "Final score: {score}. Print it. Frame it. Ignore it.",
     "{score} points. The snake has seen better days.",
     "You call that {score}? The snake is embarrassed for you.",
-    "{score}. Somewhere between 'meh' and 'why bother'."
+    "{score}. Somewhere between 'meh' and 'why bother'.",
+    "{score} points. Pac-Man's ghosts have higher kill counts and better manners.",
+    "Beam this score directly into space: {score}. Nobody will find it.",
+    "{score}. Even a Nokia 3310's tiny screen deserved better pixels than that.",
+    "The Prime Directive says don't interfere. Your {score} interfered with nothing, including greatness.",
+    "{score} points. Donkey Kong is throwing barrels of pity."
   ]
   readonly property var levelQuips: [
     "Made it to level {level}. The walls remain undefeated.",
     "Level {level}. A number. Nothing more.",
     "Level {level}, reached and then immediately un-reached.",
     "You died on level {level}, same as everyone else who tried.",
-    "Level {level}. Somewhere, a wall is proud of itself."
+    "Level {level}. Somewhere, a wall is proud of itself.",
+    "Level {level}. MacGyver would've built a ladder over that wall by now.",
+    "Level {level} achieved, Captain's Log: unremarkable.",
+    "Level {level}. Somewhere, a Game Boy cartridge sighs in solidarity.",
+    "You beamed down to level {level} and did not beam back up.",
+    "Level {level}. The Nokia snake never had it this rough."
   ]
   // {totalTime} is lifetime playtime across every run, not just this one -
   // see totalSeconds above.
@@ -198,7 +222,12 @@ Panel {
     "Cumulative time wasted: {totalTime}. Framed and hung with pride.",
     "{totalTime} lifetime playtime. The agent finished hours ago.",
     "All told, {totalTime}. History will not remember this.",
-    "{totalTime} across every attempt. Somewhere, that's a whole movie you didn't watch."
+    "{totalTime} across every attempt. Somewhere, that's a whole movie you didn't watch.",
+    "{totalTime} total. Enough time to rewatch a season of Star Trek. You chose this instead.",
+    "MacGyver could've escaped a locked room in less than {totalTime}.",
+    "{totalTime} lifetime, across every attempt. Nokia's battery would've outlasted you.",
+    "In {totalTime} you could've beaten several retro games. You beat none of them, including this one.",
+    "{totalTime}. The Enterprise could've crossed a sector in that time. You crossed a wall."
   ]
   readonly property var allGameOverQuips: timeQuips.concat(scoreQuips, levelQuips, totalTimeQuips)
 
@@ -213,7 +242,12 @@ Panel {
     "High score! {score}. The trophy is imaginary but the pride is real.",
     "You out-snaked your past self. {score}. Legendary. Ish.",
     "{score} - a new best. Somewhere, past-you is furious.",
-    "Record broken: {score}. The snake salutes you. Sort of."
+    "Record broken: {score}. The snake salutes you. Sort of.",
+    "New high score: {score}. MacGyver salutes your resourcefulness. Barely.",
+    "{score}! Somewhere, a Nokia 3310 nods in grudging respect.",
+    "Personal best: {score}. Log it in the ship's records. Nobody reads those either.",
+    "Beam it up: {score} points, a new record, still no trophy.",
+    "{score}. Insert coin for another round of mild validation."
   ]
 
   property string gameOverTemplate: ""
@@ -419,7 +453,10 @@ Panel {
     gameOver = true
     running = false
     var isNewBest = score > best
-    if (isNewBest) best = score
+    if (isNewBest) {
+      if (endlessMode) bestEndless = score
+      else bestLevels = score
+    }
     saveState()
     var pool = isNewBest ? highscoreQuips : allGameOverQuips
     gameOverTemplate = pool[Math.floor(Math.random() * pool.length)]
@@ -478,35 +515,60 @@ Panel {
   readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy/plugins/" + root.moduleName + "/"
   readonly property string statePath: stateDir + "state.json"
 
-  function loadState(raw) {
-    // onLoaded can fire more than once during startup (the implicit preload
-    // plus the explicit reload() below); only the first one should apply,
-    // or a later reload of the file we just wrote could stomp progress made
-    // by actual play in between.
-    if (stateLoaded) return
+  // Last snapshot known to be on disk (null until the first load
+  // resolves). saveState() merges against this - not just against live
+  // in-memory values - so a stale/lower value here can never overwrite a
+  // higher one another writer (a sibling instance on another monitor, or
+  // just an earlier save this same instance already made) put there.
+  // watchChanges + onFileChanged keep it current if anything else
+  // touches the file while this instance is alive.
+  property var diskState: null
+
+  function extractState(parsed) {
+    var d = parsed || {}
+    return {
+      bestLevels: typeof d.bestLevels === "number" ? d.bestLevels : (typeof d.best === "number" ? d.best : 0),
+      bestEndless: typeof d.bestEndless === "number" ? d.bestEndless : 0,
+      totalSeconds: typeof d.totalSeconds === "number" ? d.totalSeconds : 0,
+      foodStyleIndex: typeof d.foodStyleIndex === "number" ? Math.floor(d.foodStyleIndex) : -1
+    }
+  }
+
+  function recordDiskState(raw) {
     var parsed = null
     try { parsed = JSON.parse(raw) } catch (e) { parsed = null }
-    if (parsed && typeof parsed.best === "number" && parsed.best > best) best = Math.floor(parsed.best)
-    if (parsed && typeof parsed.totalSeconds === "number" && parsed.totalSeconds > totalSeconds)
-      totalSeconds = Math.floor(parsed.totalSeconds)
-    if (parsed && typeof parsed.foodStyleIndex === "number") {
-      var idx = Math.floor(parsed.foodStyleIndex)
-      if (idx >= 0 && idx < foodStyles.length) foodStyleIndex = idx
-    }
+    diskState = extractState(parsed)
+    // onLoaded can fire more than once during startup (the implicit
+    // preload plus the explicit reload() below); only the first one
+    // should seed live play state, or a later reload could stomp
+    // progress made by actual play in between.
+    if (stateLoaded) return
+    if (diskState.bestLevels > bestLevels) bestLevels = diskState.bestLevels
+    if (diskState.bestEndless > bestEndless) bestEndless = diskState.bestEndless
+    if (diskState.totalSeconds > totalSeconds) totalSeconds = diskState.totalSeconds
+    if (diskState.foodStyleIndex >= 0 && diskState.foodStyleIndex < foodStyles.length)
+      foodStyleIndex = diskState.foodStyleIndex
     stateLoaded = true
   }
 
   // Called on every death and whenever the panel closes (see
-  // onOpenedChanged), not just on a new best, since totalSeconds moves
-  // independently of the score.
+  // onOpenedChanged) or the food skin changes, not just on a new best,
+  // since totalSeconds and foodStyleIndex move independently of the score.
   function saveState() {
     if (!stateLoaded) return
-    stateFile.setText(JSON.stringify({
-      version: 1,
-      best: root.best,
+    var d = diskState || extractState(null)
+    bestLevels = Math.max(bestLevels, d.bestLevels)
+    bestEndless = Math.max(bestEndless, d.bestEndless)
+    totalSeconds = Math.max(totalSeconds, d.totalSeconds)
+    var payload = {
+      version: 2,
+      bestLevels: root.bestLevels,
+      bestEndless: root.bestEndless,
       totalSeconds: root.totalSeconds,
       foodStyleIndex: root.foodStyleIndex
-    }, null, 2) + "\n")
+    }
+    diskState = extractState(payload)
+    stateFile.setText(JSON.stringify(payload, null, 2) + "\n")
   }
 
   Process {
@@ -517,13 +579,14 @@ Panel {
   FileView {
     id: stateFile
     path: root.statePath
-    watchChanges: false
+    watchChanges: true
     atomicWrites: true
     printErrors: false
-    onLoaded: root.loadState(text())
+    onFileChanged: reload()
+    onLoaded: root.recordDiskState(text())
     // First run: the file doesn't exist yet. Without this, stateLoaded
     // stays false forever and saveState() becomes a permanent no-op.
-    onLoadFailed: root.loadState("")
+    onLoadFailed: root.recordDiskState("")
   }
 
   Component.onCompleted: {
