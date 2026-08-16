@@ -48,6 +48,8 @@ run.
 
 ## Levels
 
+![Level 42, about to eat the Apple logo](screenshot-levels.png)
+
 Two modes, swap with `m`:
 
 - **Levels** (default) — the header shows your current level and a thin
@@ -66,7 +68,8 @@ Two modes, swap with `m`:
 
 - `manifest.json` — plugin manifest (`bar-widget` kind)
 - `Panel.qml` — bar icon + popup panel + game logic, all in one entry point
-- `preview.png` — screenshot
+- `preview.png` — marketplace listing screenshot
+- `screenshot-levels.png` — levels/obstacles screenshot
 - `LICENSE` — MIT
 
 ## License
