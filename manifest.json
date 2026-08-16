@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "jonh.snake",
+  "name": "Snake",
+  "version": "1.0.0",
+  "author": "jonh",
+  "description": "Classic snake game you can play from the top bar. Eat the apple, don't hit the walls or yourself.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Snake",
+    "description": "Play snake from the top bar",
+    "category": "Fun",
+    "allowMultiple": false
+  }
+}
