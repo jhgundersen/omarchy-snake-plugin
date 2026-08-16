@@ -10,9 +10,9 @@ import qs.Commons
 //
 // Levels mode: the header shows "Level N" and a thin progress bar tracks
 // score toward the next one. Level is derived from score (pointsPerLevel
-// points each, capped at 25) instead of being stored separately, so a fresh
-// game always starts on Level 1. From level 2 on, obstaclesForLevel() lays
-// out walls to route around. Leveling up respawns the snake (score/best
+// points each, capped at maxLevel) instead of being stored separately, so
+// a fresh game always starts on Level 1. From level 2 on, obstaclesForLevel()
+// lays out walls to route around. Leveling up respawns the snake (score/best
 // carry over) via findSpawnRow(), which hunts for a clear run of cells so
 // the respawn never drops it straight onto a wall; obstacle collision only
 // checks the *next* head cell (see tick()), so a body segment left sitting
@@ -43,10 +43,11 @@ Panel {
   property bool endlessMode: false
 
   readonly property int pointsPerLevel: 12
-  readonly property int level: root.endlessMode ? 1 : Math.min(25, 1 + Math.floor(score / pointsPerLevel))
+  readonly property int maxLevel: 50
+  readonly property int level: root.endlessMode ? 1 : Math.min(maxLevel, 1 + Math.floor(score / pointsPerLevel))
   readonly property var obstacles: root.endlessMode ? [] : obstaclesForLevel(level)
   readonly property real levelProgress: {
-    if (root.endlessMode || level >= 25) return 1.0
+    if (root.endlessMode || level >= maxLevel) return 1.0
     var base = (level - 1) * pointsPerLevel
     return Math.max(0, Math.min(1, (score - base) / pointsPerLevel))
   }
@@ -56,8 +57,11 @@ Panel {
     resetGame()
   }
 
-  // Deterministic wall layouts for levels 2-25: 8 obstacle shapes, cycling
-  // through 3 difficulty tiers (gap shrinks every 8 levels). Level 1 is open.
+  // Deterministic wall layouts for levels 2-50: 8 obstacle shapes, cycling
+  // every 8 levels. The gap shrinks each cycle for the first 3 (levels
+  // 2-25), then holds at its 2-cell floor for the rest, so levels 26+ keep
+  // rotating through the same 8 shapes at the max difficulty rather than
+  // becoming impossible. Level 1 is open.
   function obstaclesForLevel(lvl) {
     if (lvl <= 1) return []
     var cx = Math.floor(cols / 2)

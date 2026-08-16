@@ -52,11 +52,12 @@ Two modes, swap with `m`:
 
 - **Levels** (default) — the header shows your current level and a thin
   progress bar tracks score toward the next one. You start on **Level 1**
-  with an open board; every 12 points advances a level, up to **Level 25**.
+  with an open board; every 12 points advances a level, up to **Level 50**.
   From level 2 on, each level lays out a different wall pattern to route
   around — a bar with a gap, a cross, a ring, pillars, and a few more —
-  cycling through 8 shapes across 3 difficulty tiers (the gaps get narrower
-  as you go). Leveling up respawns the snake on a clear patch of the new
+  cycling through 8 shapes, with the gaps getting narrower for the first
+  three cycles (up to level 25) before holding at their tightest for the
+  rest. Leveling up respawns the snake on a clear patch of the new
   layout (score and best carry over) and nudges the food to a new skin.
 - **Endless** — the classic game: open board, no obstacles, no leveling,
   score just climbs.
