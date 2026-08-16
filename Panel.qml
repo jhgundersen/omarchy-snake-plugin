@@ -1,4 +1,6 @@
 import QtQuick
+import Quickshell
+import Quickshell.Io
 import qs.Ui
 import qs.Commons
 
@@ -27,6 +29,13 @@ import qs.Commons
 // wallsWrap independently swaps the board edges between solid (default,
 // hitting one ends the run) and wrapping (stepping off one side re-enters
 // from the opposite side, snake-cube style) in both Levels and Endless.
+//
+// `best`, `totalSeconds` (lifetime playtime, ticking alongside
+// elapsedSeconds - see the 1s Timer), and `foodStyleIndex` (last food skin
+// picked - see cycleFoodStyle()) persist across shell restarts as JSON
+// under this plugin's own state directory (see stateDir/statePath below),
+// loaded once at startup and rewritten on every death, panel close, and
+// food-skin change.
 Panel {
   id: root
   moduleName: "jhgundersen.snake"
@@ -46,6 +55,7 @@ Panel {
   property var food: null
   property int score: 0
   property int best: 0
+  property bool stateLoaded: false
   property bool running: false
   property bool gameOver: false
   property bool endlessMode: false
@@ -105,17 +115,26 @@ Panel {
   // there and, since it occupies the same fixed-height row as the levels
   // progress bar, keeps the panel from resizing when 'm' swaps modes.
   property int elapsedSeconds: 0
+  // Lifetime seconds spent playing, across every run this plugin has ever
+  // seen (see the 1s Timer below), persisted the same way as `best` -
+  // loaded once at startup, saved on death and on panel close.
+  property int totalSeconds: 0
   readonly property string elapsedTimeText: {
     var m = Math.floor(elapsedSeconds / 60)
     var s = elapsedSeconds % 60
     return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
   }
 
-  // "2m5s", "45s" - compact duration for the game-over quip below.
+  // "2m5s", "45s", "3h12m" - compact duration for the game-over quips
+  // below. Drops seconds once it's long enough to need hours; nobody needs
+  // lifetime playtime down to the second.
   function formatDuration(totalSeconds) {
-    var m = Math.floor(totalSeconds / 60)
+    var h = Math.floor(totalSeconds / 3600)
+    var m = Math.floor((totalSeconds % 3600) / 60)
     var s = totalSeconds % 60
-    return m > 0 ? (m + "m" + s + "s") : (s + "s")
+    if (h > 0) return h + "h" + m + "m"
+    if (m > 0) return m + "m" + s + "s"
+    return s + "s"
   }
 
   // One-liners for the game-over screen. {time}/{score}/{level} get
@@ -167,7 +186,21 @@ Panel {
     "You died on level {level}, same as everyone else who tried.",
     "Level {level}. Somewhere, a wall is proud of itself."
   ]
-  readonly property var allGameOverQuips: timeQuips.concat(scoreQuips, levelQuips)
+  // {totalTime} is lifetime playtime across every run, not just this one -
+  // see totalSeconds above.
+  readonly property var totalTimeQuips: [
+    "You've now spent {totalTime} of your life on this. No regrets. Okay, some regrets.",
+    "Lifetime total: {totalTime}. Somewhere, a to-do list grows longer.",
+    "{totalTime} total, across every run. The snake thanks you. The snake does not care.",
+    "Grand total: {totalTime}. A monument to procrastination.",
+    "{totalTime} spent here in total. Worth it? Survey says: unclear.",
+    "You've fed this snake {totalTime} of your one life. It remains ungrateful.",
+    "Cumulative time wasted: {totalTime}. Framed and hung with pride.",
+    "{totalTime} lifetime playtime. The agent finished hours ago.",
+    "All told, {totalTime}. History will not remember this.",
+    "{totalTime} across every attempt. Somewhere, that's a whole movie you didn't watch."
+  ]
+  readonly property var allGameOverQuips: timeQuips.concat(scoreQuips, levelQuips, totalTimeQuips)
 
   // Only rolled when this run's score beats (not ties) the previous best.
   readonly property var highscoreQuips: [
@@ -189,6 +222,7 @@ Panel {
   function fillGameOverTemplate(template) {
     return template
       .replace("{time}", formatDuration(elapsedSeconds))
+      .replace("{totalTime}", formatDuration(totalSeconds))
       .replace("{score}", score)
       .replace("{level}", level)
   }
@@ -296,6 +330,7 @@ Panel {
 
   function cycleFoodStyle() {
     foodStyleIndex = (foodStyleIndex + 1) % foodStyles.length
+    saveState()
   }
 
   // Scans for a run of `runLen` clear cells in a row, starting from the
@@ -354,11 +389,11 @@ Panel {
   // the new layout instead of leaving it to navigate straight into a wall
   // that just appeared. Guarded by `running` so this doesn't also fire from
   // resetGame()'s own score reset (that already calls respawnSnake once).
-  // Also nudges the food skin along, so a new level looks new.
+  // Food skin is left alone here - it's a player choice (see
+  // cycleFoodStyle()), not something a level change should touch.
   onLevelChanged: {
     if (!running) return
     respawnSnake()
-    cycleFoodStyle()
   }
 
   // Picks uniformly among cells the snake and the current level's obstacles
@@ -385,6 +420,7 @@ Panel {
     running = false
     var isNewBest = score > best
     if (isNewBest) best = score
+    saveState()
     var pool = isNewBest ? highscoreQuips : allGameOverQuips
     gameOverTemplate = pool[Math.floor(Math.random() * pool.length)]
   }
@@ -432,7 +468,73 @@ Panel {
     running = !running
   }
 
-  onOpenedChanged: if (opened) resetGame()
+  // Best score and lifetime playtime survive shell restarts via a small
+  // JSON file under this plugin's own state directory -
+  // $XDG_STATE_HOME/omarchy/plugins/<id>/, mirroring where first-party
+  // plugins (e.g. notifications, weather) keep their own persisted state
+  // under ~/.local/state/omarchy/. Namespaced by moduleName rather than
+  // dropped straight in that shared directory so a third-party plugin's
+  // file can't collide with anyone else's.
+  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy/plugins/" + root.moduleName + "/"
+  readonly property string statePath: stateDir + "state.json"
+
+  function loadState(raw) {
+    // onLoaded can fire more than once during startup (the implicit preload
+    // plus the explicit reload() below); only the first one should apply,
+    // or a later reload of the file we just wrote could stomp progress made
+    // by actual play in between.
+    if (stateLoaded) return
+    var parsed = null
+    try { parsed = JSON.parse(raw) } catch (e) { parsed = null }
+    if (parsed && typeof parsed.best === "number" && parsed.best > best) best = Math.floor(parsed.best)
+    if (parsed && typeof parsed.totalSeconds === "number" && parsed.totalSeconds > totalSeconds)
+      totalSeconds = Math.floor(parsed.totalSeconds)
+    if (parsed && typeof parsed.foodStyleIndex === "number") {
+      var idx = Math.floor(parsed.foodStyleIndex)
+      if (idx >= 0 && idx < foodStyles.length) foodStyleIndex = idx
+    }
+    stateLoaded = true
+  }
+
+  // Called on every death and whenever the panel closes (see
+  // onOpenedChanged), not just on a new best, since totalSeconds moves
+  // independently of the score.
+  function saveState() {
+    if (!stateLoaded) return
+    stateFile.setText(JSON.stringify({
+      version: 1,
+      best: root.best,
+      totalSeconds: root.totalSeconds,
+      foodStyleIndex: root.foodStyleIndex
+    }, null, 2) + "\n")
+  }
+
+  Process {
+    id: ensureStateDirProc
+    command: ["mkdir", "-p", root.stateDir]
+  }
+
+  FileView {
+    id: stateFile
+    path: root.statePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadState(text())
+    // First run: the file doesn't exist yet. Without this, stateLoaded
+    // stays false forever and saveState() becomes a permanent no-op.
+    onLoadFailed: root.loadState("")
+  }
+
+  Component.onCompleted: {
+    ensureStateDirProc.running = true
+    Qt.callLater(function() { stateFile.reload() })
+  }
+
+  onOpenedChanged: {
+    if (opened) resetGame()
+    else saveState()
+  }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -448,7 +550,10 @@ Panel {
     interval: 1000
     repeat: true
     running: root.opened && root.running && !root.gameOver
-    onTriggered: root.elapsedSeconds += 1
+    onTriggered: {
+      root.elapsedSeconds += 1
+      root.totalSeconds += 1
+    }
   }
 
   BarIconButton {

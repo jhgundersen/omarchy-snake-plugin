@@ -40,13 +40,15 @@ omarchy plugin disable jhgundersen.snake
 Click the snake icon in the bar to open the panel. Each open starts a fresh
 run.
 
-- **Arrow keys or `hjkl`** — steer
+- **Arrow keys, `hjkl`, or `wasd`** — steer
 - **Space** — pause/resume, or restart after a game over
-- **`m`** — toggle between Levels and Endless mode
-- **`f`** or click the board — cosmetic easter egg: cycles the food skin
-- **`w`** or the ↺ button in the header — toggle solid walls (default, running
+- **`m`**, or the `mode(m)` label under the board — toggle between Levels
+  and Endless mode
+- **`b`**, or the `borders(b)` label — toggle solid walls (default, running
   into an edge ends the run) vs. wrapping walls (stepping off one side
   re-enters from the opposite side)
+- **`f`**, the `food(f)` label, or clicking the board — cosmetic easter
+  egg: cycles the food skin. Your choice is remembered for next time.
 - **Esc** — close the panel
 
 ## Levels
@@ -64,10 +66,17 @@ Two modes, swap with `m`:
   and a few more — cycling through 8 shapes, with the gaps getting
   narrower for the first three cycles (up to level 25) before holding at
   their tightest for the rest. Leveling up respawns the snake on a clear
-  patch of the new layout (score and best carry over) and nudges the food
-  to a new skin.
+  patch of the new layout (score and best carry over; the food skin
+  doesn't change).
 - **Endless** — the classic game: open board, no obstacles, no leveling,
   score just climbs.
+
+## Persistence
+
+Your best score, lifetime playtime (shown off in some of the game-over
+lines), and chosen food skin survive shell restarts — kept as JSON in
+`~/.local/state/omarchy/plugins/jhgundersen.snake/state.json`, written on
+death, on closing the panel, and on changing the food skin.
 
 ## Files
 
