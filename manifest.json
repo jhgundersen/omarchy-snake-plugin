@@ -4,7 +4,7 @@
   "name": "Snake",
   "version": "1.0.0",
   "author": "jonh",
-  "description": "Classic snake game you can play from the top bar. Eat the apple, don't hit the walls or yourself.",
+  "description": "Something to do while the build's compiling and the agent's still thinking. Snake, in your top bar.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Snake",
-    "description": "Play snake from the top bar",
+    "description": "For the waiting-on-something moments",
     "category": "Fun",
     "allowMultiple": false
   }

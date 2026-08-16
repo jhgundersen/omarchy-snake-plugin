@@ -1,9 +1,12 @@
 # Snake
 
-A playable Snake game that lives in the Omarchy top bar — a self-contained
-`bar-widget` plugin for [Omarchy](https://omarchy.org)'s shell, in the same
-style as the built-in Audio, Network, and Bluetooth widgets: one bar icon,
-one popup panel.
+The build's compiling. The agent's still thinking. The good idea hasn't
+shown up yet. This is what you do instead of doomscrolling: a fully
+playable Snake, one click away in your Omarchy top bar.
+
+It's a self-contained `bar-widget` plugin for [Omarchy](https://omarchy.org)'s
+shell, in the same style as the built-in Audio, Network, and Bluetooth
+widgets: one bar icon, one popup panel.
 
 ## Install
 
@@ -25,6 +28,7 @@ run.
 
 - **Arrow keys or `hjkl`** — steer
 - **Space** — pause/resume, or restart after a game over
+- **`m`** — toggle between Levels and Endless mode
 - **Esc** — close the panel
 - **Click the board** — cosmetic easter egg: cycles the food through the
   apple emoji and a set of nerd-font brand glyphs (Apple, Google, Microsoft,
@@ -33,12 +37,18 @@ run.
 
 ## Levels
 
-The header shows your current level instead of a static title. You start on
-**Level 1** with an open board; every 5 points advances a level, up to
-**Level 25**. From level 2 on, each level lays out a different wall pattern
-you have to route around — a bar with a gap, a cross, a ring, pillars, and a
-few more — cycling through 8 shapes across 3 difficulty tiers (the gaps get
-narrower as you go).
+Two modes, swap with `m`:
+
+- **Levels** (default) — the header shows your current level and a thin
+  progress bar tracks score toward the next one. You start on **Level 1**
+  with an open board; every 12 points advances a level, up to **Level 25**.
+  From level 2 on, each level lays out a different wall pattern to route
+  around — a bar with a gap, a cross, a ring, pillars, and a few more —
+  cycling through 8 shapes across 3 difficulty tiers (the gaps get narrower
+  as you go). Leveling up respawns the snake on a clear patch of the new
+  layout (score and best carry over) and nudges the food to a new skin.
+- **Endless** — the classic game: open board, no obstacles, no leveling,
+  score just climbs.
 
 ## Files
 

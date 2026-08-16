@@ -2,24 +2,31 @@ import QtQuick
 import qs.Ui
 import qs.Commons
 
-// Snake, playable from the bar. Bar icon opens a keyboard-driven popup with
-// a small grid; arrow keys / hjkl steer, Space pauses or restarts. Each open
-// starts a fresh run (onOpenedChanged below), same as summoning a game.
+// Snake, for the moments between: the build's compiling, the agent's still
+// thinking, the idea hasn't shown up yet. Lives in the bar so it's always
+// one click from wherever you already are. Arrow keys / hjkl steer, Space
+// pauses or restarts, m swaps Levels/Endless. Each open starts a fresh run
+// (onOpenedChanged below).
 //
-// Levels: the header shows "Level N" rather than a static title. Level is
-// derived from score (one level every 5 points, capped at 25) instead of
-// being stored separately, so a fresh game always starts on Level 1. From
-// level 2 on, obstaclesForLevel() lays out walls to route around; collision
-// only checks the *next* head cell (see tick()), so leveling up mid-run
-// never retroactively kills a body segment sitting on a newly-added wall.
+// Levels mode: the header shows "Level N" and a thin progress bar tracks
+// score toward the next one. Level is derived from score (pointsPerLevel
+// points each, capped at 25) instead of being stored separately, so a fresh
+// game always starts on Level 1. From level 2 on, obstaclesForLevel() lays
+// out walls to route around. Leveling up respawns the snake (score/best
+// carry over) via findSpawnRow(), which hunts for a clear run of cells so
+// the respawn never drops it straight onto a wall; obstacle collision only
+// checks the *next* head cell (see tick()), so a body segment left sitting
+// under a newly-added wall by that respawn doesn't retroactively kill it.
+// Endless mode is the classic game: no obstacles, no leveling, score just
+// climbs.
 Panel {
   id: root
   moduleName: "jonh.snake"
   ipcTarget: "jonh.snake"
 
-  readonly property int cols: 16
-  readonly property int rows: 14
-  readonly property int cellSize: 14
+  readonly property int cols: 22
+  readonly property int rows: 16
+  readonly property int cellSize: 15
 
   property var snake: []
   property var direction: ({ x: 1, y: 0 })
@@ -33,9 +40,21 @@ Panel {
   property int best: 0
   property bool running: false
   property bool gameOver: false
+  property bool endlessMode: false
 
-  readonly property int level: Math.min(25, 1 + Math.floor(score / 5))
-  readonly property var obstacles: obstaclesForLevel(level)
+  readonly property int pointsPerLevel: 12
+  readonly property int level: root.endlessMode ? 1 : Math.min(25, 1 + Math.floor(score / pointsPerLevel))
+  readonly property var obstacles: root.endlessMode ? [] : obstaclesForLevel(level)
+  readonly property real levelProgress: {
+    if (root.endlessMode || level >= 25) return 1.0
+    var base = (level - 1) * pointsPerLevel
+    return Math.max(0, Math.min(1, (score - base) / pointsPerLevel))
+  }
+
+  function toggleMode() {
+    endlessMode = !endlessMode
+    resetGame()
+  }
 
   // Deterministic wall layouts for levels 2-25: 8 obstacle shapes, cycling
   // through 3 difficulty tiers (gap shrinks every 8 levels). Level 1 is open.
@@ -128,19 +147,53 @@ Panel {
     foodStyleIndex = (foodStyleIndex + 1) % foodStyles.length
   }
 
-  function resetGame() {
-    var midY = Math.floor(rows / 2)
+  // Finds a run of 4 clear cells to spawn/respawn the snake into, starting
+  // from the vertical middle and fanning outward — so a level's obstacles
+  // (which are usually centered) never force the snake to spawn on a wall.
+  function findSpawnRow() {
+    var preferredY = Math.floor(rows / 2)
+    for (var offset = 0; offset < rows; offset++) {
+      var y = preferredY + (offset % 2 === 0 ? offset / 2 : -(offset + 1) / 2)
+      if (y < 0 || y >= rows) continue
+      for (var x = 2; x <= cols - 5; x++) {
+        var clear = true
+        for (var k = 0; k < 4; k++) {
+          if (isObstacle(x + k, y)) { clear = false; break }
+        }
+        if (clear) return { x: x, y: y }
+      }
+    }
+    return { x: 2, y: preferredY }
+  }
+
+  function respawnSnake() {
+    var spot = findSpawnRow()
     snake = [
-      { x: 4, y: midY },
-      { x: 3, y: midY },
-      { x: 2, y: midY }
+      { x: spot.x + 2, y: spot.y },
+      { x: spot.x + 1, y: spot.y },
+      { x: spot.x, y: spot.y }
     ]
     direction = { x: 1, y: 0 }
     directionQueue = []
+    spawnFood()
+  }
+
+  function resetGame() {
     score = 0
     gameOver = false
     running = true
-    spawnFood()
+    respawnSnake()
+  }
+
+  // Leveling up mid-run gives the snake a fresh, obstacle-clear start on
+  // the new layout instead of leaving it to navigate straight into a wall
+  // that just appeared. Guarded by `running` so this doesn't also fire from
+  // resetGame()'s own score reset (that already calls respawnSnake once).
+  // Also nudges the food skin along, so a new level looks new.
+  onLevelChanged: {
+    if (!running) return
+    respawnSnake()
+    cycleFoodStyle()
   }
 
   // Picks uniformly among cells the snake and the current level's obstacles
@@ -234,7 +287,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentWidth: panel.fittedContentWidth(Style.space(440))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
@@ -244,7 +297,10 @@ Panel {
       onActivateRequested: root.togglePause()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(t) { if (t === "r" || t === "R") root.resetGame() }
+      onTextKey: function(t) {
+        if (t === "r" || t === "R") root.resetGame()
+        else if (t === "m" || t === "M") root.toggleMode()
+      }
 
       Column {
         id: column
@@ -259,7 +315,7 @@ Panel {
             id: title
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            text: "Level " + root.level
+            text: root.endlessMode ? "Endless" : ("Level " + root.level)
             color: root.bar.foreground
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.title
@@ -274,6 +330,27 @@ Panel {
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
+          }
+        }
+
+        // Progress toward the next level. Hidden in endless mode, where
+        // there is no next level to track.
+        Rectangle {
+          width: parent.width
+          height: Style.space(5)
+          radius: height / 2
+          visible: !root.endlessMode
+          color: Qt.darker(root.bar.foreground, 3.5)
+
+          Rectangle {
+            width: parent.width * root.levelProgress
+            height: parent.height
+            radius: height / 2
+            color: Color.accent
+
+            Behavior on width {
+              NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+            }
           }
         }
 
@@ -369,7 +446,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Arrows / hjkl to steer · Space to pause/restart"
+          text: "Arrows/hjkl steer · Space pause/restart · m mode"
           color: Qt.darker(root.bar.foreground, 1.6)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
