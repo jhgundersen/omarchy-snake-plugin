@@ -150,20 +150,34 @@ Panel {
   // Finds a run of 4 clear cells to spawn/respawn the snake into, starting
   // from the vertical middle and fanning outward — so a level's obstacles
   // (which are usually centered) never force the snake to spawn on a wall.
-  function findSpawnRow() {
+  // Scans for a run of `runLen` clear cells in a row, starting from the
+  // vertical middle and fanning outward.
+  function findClearRun(runLen) {
     var preferredY = Math.floor(rows / 2)
     for (var offset = 0; offset < rows; offset++) {
       var y = preferredY + (offset % 2 === 0 ? offset / 2 : -(offset + 1) / 2)
       if (y < 0 || y >= rows) continue
-      for (var x = 2; x <= cols - 5; x++) {
+      for (var x = 2; x <= cols - runLen - 1; x++) {
         var clear = true
-        for (var k = 0; k < 4; k++) {
+        for (var k = 0; k < runLen; k++) {
           if (isObstacle(x + k, y)) { clear = false; break }
         }
         if (clear) return { x: x, y: y }
       }
     }
-    return { x: 2, y: preferredY }
+    return null
+  }
+
+  // 3 cells for the body plus enough runway ahead that heading straight
+  // right for a couple of ticks can't walk it straight into a wall it just
+  // spawned next to. Tries a generous runway first and only settles for a
+  // shorter one if the level's obstacles don't leave anything longer.
+  function findSpawnRow() {
+    for (var runLen = 10; runLen >= 4; runLen -= 2) {
+      var spot = findClearRun(runLen)
+      if (spot) return spot
+    }
+    return { x: 2, y: Math.floor(rows / 2) }
   }
 
   function respawnSnake() {
@@ -300,6 +314,7 @@ Panel {
       onTextKey: function(t) {
         if (t === "r" || t === "R") root.resetGame()
         else if (t === "m" || t === "M") root.toggleMode()
+        else if (t === "f" || t === "F") root.cycleFoodStyle()
       }
 
       Column {
@@ -446,7 +461,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Arrows/hjkl steer · Space pause/restart · m mode"
+          text: "Arrows/hjkl steer · Space pause/restart · m mode · f food"
           color: Qt.darker(root.bar.foreground, 1.6)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption

@@ -1,5 +1,7 @@
 # Snake
 
+![Snake](preview.png)
+
 The build's compiling. The agent's still thinking. The good idea hasn't
 shown up yet. This is what you do instead of doomscrolling: a fully
 playable Snake, one click away in your Omarchy top bar.
@@ -21,6 +23,18 @@ git clone https://github.com/jhgundersen/omarchy-snake-plugin.git ~/.config/omar
 omarchy plugin enable jonh.snake
 ```
 
+## Uninstall
+
+```sh
+omarchy plugin remove jonh.snake
+```
+
+Or disable it without removing the files:
+
+```sh
+omarchy plugin disable jonh.snake
+```
+
 ## Playing
 
 Click the snake icon in the bar to open the panel. Each open starts a fresh
@@ -29,11 +43,11 @@ run.
 - **Arrow keys or `hjkl`** — steer
 - **Space** — pause/resume, or restart after a game over
 - **`m`** — toggle between Levels and Endless mode
+- **`f`** or click the board — cosmetic easter egg: cycles the food through
+  the apple emoji and a set of nerd-font brand glyphs (Apple, Google,
+  Microsoft, GitHub, Amazon, Meta, Netflix, Spotify, Docker, Linux), tinted
+  with the active omarchy theme's colors rather than each brand's own
 - **Esc** — close the panel
-- **Click the board** — cosmetic easter egg: cycles the food through the
-  apple emoji and a set of nerd-font brand glyphs (Apple, Google, Microsoft,
-  GitHub, Amazon, Meta, Netflix, Spotify, Docker, Linux), tinted with the
-  active omarchy theme's colors rather than each brand's own
 
 ## Levels
 
@@ -54,3 +68,10 @@ Two modes, swap with `m`:
 
 - `manifest.json` — plugin manifest (`bar-widget` kind)
 - `Panel.qml` — bar icon + popup panel + game logic, all in one entry point
+- `preview.png` — screenshot
+- `LICENSE` — MIT
+
+## License
+
+MIT — see [LICENSE](LICENSE). No external dependencies beyond the Omarchy
+shell APIs (`qs.Ui`, `qs.Commons`) it runs inside.
