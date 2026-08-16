@@ -5,20 +5,24 @@ import qs.Commons
 // Snake, for the moments between: the build's compiling, the agent's still
 // thinking, the idea hasn't shown up yet. Lives in the bar so it's always
 // one click from wherever you already are. Arrow keys / hjkl steer, Space
-// pauses or restarts, m swaps Levels/Endless. Each open starts a fresh run
-// (onOpenedChanged below).
+// pauses or restarts, m swaps Levels/Endless, w swaps solid/wrapping walls.
+// Each open starts a fresh run (onOpenedChanged below).
 //
 // Levels mode: the header shows "Level N" and a thin progress bar tracks
-// score toward the next one. Level is derived from score (pointsPerLevel
-// points each, capped at maxLevel) instead of being stored separately, so
-// a fresh game always starts on Level 1. From level 2 on, obstaclesForLevel()
-// lays out walls to route around. Leveling up respawns the snake (score/best
-// carry over) via findSpawnRow(), which hunts for a clear run of cells so
-// the respawn never drops it straight onto a wall; obstacle collision only
-// checks the *next* head cell (see tick()), so a body segment left sitting
-// under a newly-added wall by that respawn doesn't retroactively kill it.
-// Endless mode is the classic game: no obstacles, no leveling, score just
-// climbs.
+// score toward the next one. Level is derived from score via
+// levelThresholds (see levelForScore()) instead of being stored
+// separately, so a fresh game always starts on Level 1. From level 2 on,
+// obstaclesForLevel() lays out walls to route around. Leveling up respawns
+// the snake (score/best carry over) via findSpawnRow(), which hunts for a
+// clear run of cells so the respawn never drops it straight onto a wall;
+// obstacle collision only checks the *next* head cell (see tick()), so a
+// body segment left sitting under a newly-added wall by that respawn
+// doesn't retroactively kill it. Endless mode is the classic game: no
+// obstacles, no leveling, score just climbs.
+//
+// wallsWrap independently swaps the board edges between solid (default,
+// hitting one ends the run) and wrapping (stepping off one side re-enters
+// from the opposite side, snake-cube style) in both Levels and Endless.
 Panel {
   id: root
   moduleName: "jhgundersen.snake"
@@ -41,20 +45,55 @@ Panel {
   property bool running: false
   property bool gameOver: false
   property bool endlessMode: false
+  property bool wallsWrap: false
 
   readonly property int pointsPerLevel: 12
   readonly property int maxLevel: 50
-  readonly property int level: root.endlessMode ? 1 : Math.min(maxLevel, 1 + Math.floor(score / pointsPerLevel))
+  // Levels 1-25 cost a flat pointsPerLevel each. Past that, every further
+  // level costs one more point than the last (26 needs 13 more, 27 needs
+  // 14 more, ...), so the climb past 25 gradually gets longer instead of
+  // the difficulty plateauing while the pace stays flat forever.
+  readonly property int flatLevelCap: 25
+
+  // levelThresholds[i] is the score at which level (i + 1) is reached, so
+  // levelThresholds[0] === 0 (level 1) through levelThresholds[maxLevel-1]
+  // (level maxLevel).
+  readonly property var levelThresholds: {
+    var arr = [0]
+    for (var lvl = 2; lvl <= maxLevel; lvl++) {
+      var prevLevel = lvl - 1
+      var cost = prevLevel < flatLevelCap ? pointsPerLevel : pointsPerLevel + (prevLevel - flatLevelCap + 1)
+      arr.push(arr[arr.length - 1] + cost)
+    }
+    return arr
+  }
+
+  function levelForScore(s) {
+    var arr = levelThresholds
+    var lvl = 1
+    for (var i = 1; i < arr.length; i++) {
+      if (s < arr[i]) break
+      lvl = i + 1
+    }
+    return lvl
+  }
+
+  readonly property int level: root.endlessMode ? 1 : levelForScore(score)
   readonly property var obstacles: root.endlessMode ? [] : obstaclesForLevel(level)
   readonly property real levelProgress: {
     if (root.endlessMode || level >= maxLevel) return 1.0
-    var base = (level - 1) * pointsPerLevel
-    return Math.max(0, Math.min(1, (score - base) / pointsPerLevel))
+    var base = levelThresholds[level - 1]
+    var next = levelThresholds[level]
+    return Math.max(0, Math.min(1, (score - base) / (next - base)))
   }
 
   function toggleMode() {
     endlessMode = !endlessMode
     resetGame()
+  }
+
+  function toggleWallsWrap() {
+    wallsWrap = !wallsWrap
   }
 
   // Deterministic wall layouts for levels 2-50: 8 obstacle shapes, cycling
@@ -253,7 +292,11 @@ Panel {
     var head = snake[0]
     var newHead = { x: head.x + direction.x, y: head.y + direction.y }
 
-    if (newHead.x < 0 || newHead.x >= cols || newHead.y < 0 || newHead.y >= rows) { endGame(); return }
+    if (newHead.x < 0 || newHead.x >= cols || newHead.y < 0 || newHead.y >= rows) {
+      if (!wallsWrap) { endGame(); return }
+      newHead.x = (newHead.x + cols) % cols
+      newHead.y = (newHead.y + rows) % rows
+    }
     if (isObstacle(newHead.x, newHead.y)) { endGame(); return }
     for (var i = 0; i < snake.length; i++) {
       if (snake[i].x === newHead.x && snake[i].y === newHead.y) { endGame(); return }
@@ -328,6 +371,7 @@ Panel {
         if (t === "r" || t === "R") root.resetGame()
         else if (t === "m" || t === "M") root.toggleMode()
         else if (t === "f" || t === "F") root.cycleFoodStyle()
+        else if (t === "w" || t === "W") root.toggleWallsWrap()
       }
 
       Column {
@@ -351,6 +395,7 @@ Panel {
           }
 
           Text {
+            id: scoreText
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             text: "Score " + root.score + (root.best > 0 ? "  ·  Best " + root.best : "")
@@ -358,6 +403,21 @@ Panel {
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
+          }
+
+          // Toggles whether running into a board edge ends the game (solid,
+          // default) or wraps the snake to the opposite side (wrap-around).
+          // Lit in the accent color while wrap is on.
+          PanelActionButton {
+            anchors.right: scoreText.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "↺"
+            foreground: root.wallsWrap ? Color.accent : Qt.darker(root.bar.foreground, 1.6)
+            hoverColor: root.bar.foreground
+            bordered: root.wallsWrap
+            tooltipText: root.wallsWrap ? "Wrapping walls (w) — click for solid" : "Solid walls (w) — click to wrap"
+            onClicked: root.toggleWallsWrap()
           }
         }
 
@@ -474,7 +534,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Arrows/hjkl steer · Space pause/restart · m mode · f food"
+          text: "Arrows/hjkl steer · Space pause/restart · m mode · f food · w walls"
           color: Qt.darker(root.bar.foreground, 1.6)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
