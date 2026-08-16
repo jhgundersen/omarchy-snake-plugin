@@ -19,20 +19,20 @@ omarchy plugin add https://github.com/jhgundersen/omarchy-snake-plugin.git --ena
 Or, to hack on it locally, clone it straight into your plugins directory:
 
 ```sh
-git clone https://github.com/jhgundersen/omarchy-snake-plugin.git ~/.config/omarchy/plugins/jonh.snake
-omarchy plugin enable jonh.snake
+git clone https://github.com/jhgundersen/omarchy-snake-plugin.git ~/.config/omarchy/plugins/jhgundersen.snake
+omarchy plugin enable jhgundersen.snake
 ```
 
 ## Uninstall
 
 ```sh
-omarchy plugin remove jonh.snake
+omarchy plugin remove jhgundersen.snake
 ```
 
 Or disable it without removing the files:
 
 ```sh
-omarchy plugin disable jonh.snake
+omarchy plugin disable jhgundersen.snake
 ```
 
 ## Playing

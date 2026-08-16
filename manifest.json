@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "jonh.snake",
+  "id": "jhgundersen.snake",
   "name": "Snake",
   "version": "1.0.0",
-  "author": "jonh",
+  "author": "Jon Håvard Gundersen",
   "description": "Something to do while the build's compiling and the agent's still thinking. Snake, in your top bar.",
   "kinds": [
     "bar-widget"

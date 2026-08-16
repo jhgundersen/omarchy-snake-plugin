@@ -21,8 +21,8 @@ import qs.Commons
 // climbs.
 Panel {
   id: root
-  moduleName: "jonh.snake"
-  ipcTarget: "jonh.snake"
+  moduleName: "jhgundersen.snake"
+  ipcTarget: "jhgundersen.snake"
 
   readonly property int cols: 22
   readonly property int rows: 16
