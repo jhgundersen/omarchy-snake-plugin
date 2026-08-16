@@ -43,10 +43,7 @@ run.
 - **Arrow keys or `hjkl`** — steer
 - **Space** — pause/resume, or restart after a game over
 - **`m`** — toggle between Levels and Endless mode
-- **`f`** or click the board — cosmetic easter egg: cycles the food through
-  the apple emoji and a set of nerd-font brand glyphs (Apple, Google,
-  Microsoft, GitHub, Amazon, Meta, Netflix, Spotify, Docker, Linux), tinted
-  with the active omarchy theme's colors rather than each brand's own
+- **`f`** or click the board — cosmetic easter egg: cycles the food skin
 - **Esc** — close the panel
 
 ## Levels

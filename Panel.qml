@@ -118,10 +118,11 @@ Panel {
     return false
   }
 
-  // Cosmetic food skins, cycled by clicking the board: the apple emoji plus
-  // ten nerd-font brand glyphs. Colors are theme tones (accent/foreground/
-  // muted and light/dark variants), not brand colors, so the easter egg
-  // still looks native to whatever omarchy theme is active.
+  // Cosmetic food skins, cycled with 'f' or by clicking the board: a
+  // handful of fruit emoji plus a few nerd-font brand glyphs. Brand-glyph
+  // colors are theme tones (accent/foreground/muted and light/dark
+  // variants), not brand colors, so the easter egg still looks native to
+  // whatever omarchy theme is active.
   readonly property color themeForeground: bar ? bar.foreground : Color.foreground
   readonly property var themePalette: [
     themeForeground,
@@ -134,7 +135,7 @@ Panel {
     Qt.darker(themeForeground, 1.3)
   ]
   readonly property var foodStyles: {
-    var glyphs = ["🍎", "󰀵", "󰊭", "󰍲", "󰊤", "", "󰈌", "󰝆", "󰓇", "󰡨", ""]
+    var glyphs = ["🍎", "🍇", "🍓", "🍒", "🍉", "󰀵", "󰊤", "󰡨", ""]
     var list = []
     for (var i = 0; i < glyphs.length; i++)
       list.push({ text: glyphs[i], color: themePalette[i % themePalette.length] })
@@ -147,11 +148,9 @@ Panel {
     foodStyleIndex = (foodStyleIndex + 1) % foodStyles.length
   }
 
-  // Finds a run of 4 clear cells to spawn/respawn the snake into, starting
-  // from the vertical middle and fanning outward — so a level's obstacles
-  // (which are usually centered) never force the snake to spawn on a wall.
   // Scans for a run of `runLen` clear cells in a row, starting from the
-  // vertical middle and fanning outward.
+  // vertical middle and fanning outward — so a level's obstacles (which are
+  // usually centered) never force the snake to spawn on a wall.
   function findClearRun(runLen) {
     var preferredY = Math.floor(rows / 2)
     for (var offset = 0; offset < rows; offset++) {
