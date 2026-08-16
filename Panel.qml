@@ -4,9 +4,13 @@ import qs.Commons
 
 // Snake, for the moments between: the build's compiling, the agent's still
 // thinking, the idea hasn't shown up yet. Lives in the bar so it's always
-// one click from wherever you already are. Arrow keys / hjkl steer, Space
-// pauses or restarts, m swaps Levels/Endless, w swaps solid/wrapping walls.
-// Each open starts a fresh run (onOpenedChanged below).
+// one click from wherever you already are. Arrow keys / hjkl / wasd steer,
+// Space pauses or restarts, m swaps Levels/Endless, b swaps solid/wrapping
+// walls. Each open starts a fresh run (onOpenedChanged below).
+//
+// wasd rides PanelKeyCatcher's onTextKey rather than onMoveRequested (which
+// only covers arrows and hjkl), calling turn() directly with the same
+// dx/dy convention.
 //
 // Levels mode: the header shows "Level N" and a thin progress bar tracks
 // score toward the next one. Level is derived from score via
@@ -94,6 +98,99 @@ Panel {
 
   function toggleWallsWrap() {
     wallsWrap = !wallsWrap
+  }
+
+  // Endless has no next level to show progress toward, so it gets a running
+  // clock in the same header slot instead — keeps something worth watching
+  // there and, since it occupies the same fixed-height row as the levels
+  // progress bar, keeps the panel from resizing when 'm' swaps modes.
+  property int elapsedSeconds: 0
+  readonly property string elapsedTimeText: {
+    var m = Math.floor(elapsedSeconds / 60)
+    var s = elapsedSeconds % 60
+    return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
+  }
+
+  // "2m5s", "45s" - compact duration for the game-over quip below.
+  function formatDuration(totalSeconds) {
+    var m = Math.floor(totalSeconds / 60)
+    var s = totalSeconds % 60
+    return m > 0 ? (m + "m" + s + "s") : (s + "s")
+  }
+
+  // One-liners for the game-over screen. {time}/{score}/{level} get
+  // substituted with the run that just ended (see fillGameOverTemplate()).
+  // endGame() picks one pool based on whether this run just beat `best`,
+  // then a random line from it once per death - not re-rolled on every
+  // re-render. Kept as three flavor pools (time/score/level) plus a
+  // separate highscore-only pool, rather than one flat list, so the
+  // highscore case never has to accidentally roll a line that doesn't
+  // mention the score.
+  readonly property var timeQuips: [
+    "Well, that's {time} of your life you'll never get back.",
+    "{time} well spent. Definitely not wasted. Probably.",
+    "The build finished ages ago. You're still here after {time}.",
+    "{time} of pure focus, undone by one wrong turn.",
+    "You survived {time}. The wall did not survive your ego.",
+    "{time}. Not your best run. Not your worst either.",
+    "Somewhere, a rubber duck is disappointed in your {time}.",
+    "{time} of your one wild and precious life, gone.",
+    "The snake remembers {time} of glory. Briefly.",
+    "You could've stretched in {time}. You did not.",
+    "{time} elapsed. Zero regrets. Okay, one regret.",
+    "That wall was there the whole time. {time} of denial.",
+    "{time}. Your coworkers think you're deep in thought.",
+    "Legendary run of {time}. Nobody was watching.",
+    "{time} down the drain, one pixel at a time.",
+    "You and the wall, {time} of tension, resolved poorly.",
+    "{time}. The agent finished. You did not.",
+    "Achievement unlocked: {time} of avoiding real work.",
+    "{time}. Worth it? Ask again after the next run.",
+    "A solid {time}. The snake deserved better."
+  ]
+  readonly property var scoreQuips: [
+    "Score: {score}. Groundbreaking. Truly.",
+    "{score} points. The bar was already low.",
+    "You scored {score}. Somewhere, a real gamer wept.",
+    "{score} points in {time}. Efficient, if nothing else.",
+    "A modest {score}. The apple logo remains unimpressed.",
+    "{score}. Write that down somewhere nobody will read it.",
+    "Final score: {score}. Print it. Frame it. Ignore it.",
+    "{score} points. The snake has seen better days.",
+    "You call that {score}? The snake is embarrassed for you.",
+    "{score}. Somewhere between 'meh' and 'why bother'."
+  ]
+  readonly property var levelQuips: [
+    "Made it to level {level}. The walls remain undefeated.",
+    "Level {level}. A number. Nothing more.",
+    "Level {level}, reached and then immediately un-reached.",
+    "You died on level {level}, same as everyone else who tried.",
+    "Level {level}. Somewhere, a wall is proud of itself."
+  ]
+  readonly property var allGameOverQuips: timeQuips.concat(scoreQuips, levelQuips)
+
+  // Only rolled when this run's score beats (not ties) the previous best.
+  readonly property var highscoreQuips: [
+    "New high score: {score}. Somebody alert the media. Or don't.",
+    "{score}! A new record. Treat yourself to absolutely nothing.",
+    "Personal best: {score}. History has been made. Barely.",
+    "You beat your high score with {score}. Confetti not included.",
+    "{score} points, a new high score, zero prize money.",
+    "New record! {score} points of undeniable, if minor, achievement.",
+    "High score! {score}. The trophy is imaginary but the pride is real.",
+    "You out-snaked your past self. {score}. Legendary. Ish.",
+    "{score} - a new best. Somewhere, past-you is furious.",
+    "Record broken: {score}. The snake salutes you. Sort of."
+  ]
+
+  property string gameOverTemplate: ""
+  readonly property string gameOverMessage: gameOverTemplate === "" ? "" : fillGameOverTemplate(gameOverTemplate)
+
+  function fillGameOverTemplate(template) {
+    return template
+      .replace("{time}", formatDuration(elapsedSeconds))
+      .replace("{score}", score)
+      .replace("{level}", level)
   }
 
   // Deterministic wall layouts for levels 2-50: 8 obstacle shapes, cycling
@@ -246,7 +343,9 @@ Panel {
 
   function resetGame() {
     score = 0
+    elapsedSeconds = 0
     gameOver = false
+    gameOverTemplate = ""
     running = true
     respawnSnake()
   }
@@ -284,7 +383,10 @@ Panel {
   function endGame() {
     gameOver = true
     running = false
-    if (score > best) best = score
+    var isNewBest = score > best
+    if (isNewBest) best = score
+    var pool = isNewBest ? highscoreQuips : allGameOverQuips
+    gameOverTemplate = pool[Math.floor(Math.random() * pool.length)]
   }
 
   function tick() {
@@ -342,6 +444,13 @@ Panel {
     onTriggered: root.tick()
   }
 
+  Timer {
+    interval: 1000
+    repeat: true
+    running: root.opened && root.running && !root.gameOver
+    onTriggered: root.elapsedSeconds += 1
+  }
+
   BarIconButton {
     id: button
     anchors.fill: parent
@@ -371,7 +480,11 @@ Panel {
         if (t === "r" || t === "R") root.resetGame()
         else if (t === "m" || t === "M") root.toggleMode()
         else if (t === "f" || t === "F") root.cycleFoodStyle()
-        else if (t === "w" || t === "W") root.toggleWallsWrap()
+        else if (t === "b" || t === "B") root.toggleWallsWrap()
+        else if (t === "w" || t === "W") root.turn(0, -1)
+        else if (t === "a" || t === "A") root.turn(-1, 0)
+        else if (t === "s" || t === "S") root.turn(0, 1)
+        else if (t === "d" || t === "D") root.turn(1, 0)
       }
 
       Column {
@@ -395,7 +508,6 @@ Panel {
           }
 
           Text {
-            id: scoreText
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             text: "Score " + root.score + (root.best > 0 ? "  ·  Best " + root.best : "")
@@ -404,41 +516,43 @@ Panel {
             font.pixelSize: Style.font.caption
             font.bold: true
           }
-
-          // Toggles whether running into a board edge ends the game (solid,
-          // default) or wraps the snake to the opposite side (wrap-around).
-          // Lit in the accent color while wrap is on.
-          PanelActionButton {
-            anchors.right: scoreText.left
-            anchors.rightMargin: Style.space(10)
-            anchors.verticalCenter: parent.verticalCenter
-            iconText: "↺"
-            foreground: root.wallsWrap ? Color.accent : Qt.darker(root.bar.foreground, 1.6)
-            hoverColor: root.bar.foreground
-            bordered: root.wallsWrap
-            tooltipText: root.wallsWrap ? "Wrapping walls (w) — click for solid" : "Solid walls (w) — click to wrap"
-            onClicked: root.toggleWallsWrap()
-          }
         }
 
-        // Progress toward the next level. Hidden in endless mode, where
-        // there is no next level to track.
-        Rectangle {
+        // Fixed-height regardless of mode so toggling 'm' never resizes the
+        // panel: Levels shows progress toward the next level; Endless has
+        // no next level to track, so it gets a running clock instead.
+        Item {
           width: parent.width
-          height: Style.space(5)
-          radius: height / 2
-          visible: !root.endlessMode
-          color: Qt.darker(root.bar.foreground, 3.5)
+          height: Style.space(18)
 
           Rectangle {
-            width: parent.width * root.levelProgress
-            height: parent.height
+            width: parent.width
+            height: Style.space(5)
             radius: height / 2
-            color: Color.accent
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.endlessMode
+            color: Qt.darker(root.bar.foreground, 3.5)
 
-            Behavior on width {
-              NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+            Rectangle {
+              width: parent.width * root.levelProgress
+              height: parent.height
+              radius: height / 2
+              color: Color.accent
+
+              Behavior on width {
+                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+              }
             }
+          }
+
+          Text {
+            anchors.centerIn: parent
+            visible: root.endlessMode
+            text: root.elapsedTimeText
+            color: Qt.darker(root.bar.foreground, 1.4)
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            font.bold: true
           }
         }
 
@@ -528,20 +642,88 @@ Panel {
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
               }
+
+              Text {
+                visible: root.gameOver
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.gameOverMessage
+                color: "#ffffff"
+                opacity: 0.7
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                // The enclosing Column has no explicit width of its own (it
+                // sizes to its widest child), so binding to board.width
+                // here instead of parent.width avoids a circular sizing
+                // dependency that would squeeze this down to near nothing.
+                width: board.width - Style.space(24)
+              }
             }
           }
         }
 
         Text {
           width: parent.width
-          text: "Arrows/hjkl steer · Space pause/restart · m mode · f food · w walls"
+          text: "Steer with arrows, hjkl, or wasd · Space to pause"
           color: Qt.darker(root.bar.foreground, 1.6)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
           horizontalAlignment: Text.AlignHCenter
           wrapMode: Text.WordWrap
         }
+
+        // Each of these doubles as a mouse target for the same toggle its
+        // key does, so the current value (mode/food skin/border behavior)
+        // is both visible and clickable without opening a menu.
+        Row {
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.space(14)
+
+          HintLabel {
+            text: "mode(m): " + (root.endlessMode ? "Endless" : "Levels")
+            onClicked: root.toggleMode()
+          }
+          HintLabel {
+            text: "borders(b): " + (root.wallsWrap ? "Wrap" : "Solid")
+            onClicked: root.toggleWallsWrap()
+          }
+          HintLabel {
+            text: "food(f): " + root.currentFoodStyle.text
+            onClicked: root.cycleFoodStyle()
+          }
+        }
       }
+    }
+  }
+
+  // Clickable status label for the bottom hint row: mode/food/borders each
+  // show their current value and share this so a click acts the same as
+  // the key it names. Brightens to full foreground on hover.
+  component HintLabel: Item {
+    id: hintLabel
+    required property string text
+    signal clicked()
+
+    implicitWidth: label.implicitWidth
+    implicitHeight: label.implicitHeight
+
+    Text {
+      id: label
+      text: hintLabel.text
+      color: mouseArea.containsMouse ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.6)
+      font.family: root.bar.fontFamily
+      font.pixelSize: Style.font.caption
+
+      Behavior on color { ColorAnimation { duration: 100 } }
+    }
+
+    MouseArea {
+      id: mouseArea
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: hintLabel.clicked()
     }
   }
 }
