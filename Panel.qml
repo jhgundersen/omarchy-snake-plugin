@@ -111,9 +111,19 @@ Panel {
     return cells
   }
 
+  // Deliberately calls obstaclesForLevel() directly instead of reading the
+  // `obstacles` property. `obstacles` is a binding derived from `level`,
+  // and QML can leave a multi-hop binding like that stale for a moment
+  // after the more direct property (`level`) has already updated and
+  // fired its changed signal — confirmed by tracing an actual level-up:
+  // onLevelChanged saw level 2 but obstacles.length was still 0 (level
+  // 1's, empty). respawnSnake() then treated the board as wide open and
+  // placed the snake right where the real level-2 wall was about to
+  // render. A plain function call has no cache to go stale.
   function isObstacle(x, y) {
-    for (var i = 0; i < obstacles.length; i++) {
-      if (obstacles[i].x === x && obstacles[i].y === y) return true
+    var list = root.endlessMode ? [] : obstaclesForLevel(level)
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].x === x && list[i].y === y) return true
     }
     return false
   }
