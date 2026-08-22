@@ -16,8 +16,8 @@ import qs.Commons
 //
 // Levels mode: the header shows "Level N" and a thin progress bar tracks
 // score toward the next one. Level is derived from score via
-// levelThresholds (see levelForScore()) instead of being stored
-// separately, so a fresh game always starts on Level 1. From level 2 on,
+// levelForScore() instead of being stored separately, so a fresh game
+// always starts on Level 1. From level 2 on,
 // obstaclesForLevel() lays out walls to route around. Leveling up respawns
 // the snake (score/best carry over) via findSpawnRow(), which hunts for a
 // clear run of cells so the respawn never drops it straight onto a wall;
@@ -33,11 +33,11 @@ import qs.Commons
 // `bestLevels`/`bestEndless` (tracked separately - `best` below just reads
 // whichever one the current mode uses, they aren't comparable scores),
 // `totalSeconds` (lifetime playtime, ticking alongside elapsedSeconds -
-// see the 1s Timer), and `foodStyleIndex` (last food skin picked - see
-// cycleFoodStyle()) persist across shell restarts as JSON under this
-// plugin's own state directory (see stateDir/statePath below). Loaded
-// once at startup and rewritten on every death, panel close, and
-// food-skin change; every write merges against the last known on-disk
+// see the 1s Timer), `foodStyleIndex` (last food skin picked - see
+// cycleFoodStyle()), and `wallsWrap` persist across shell restarts as JSON
+// under this plugin's own state directory (see stateDir/statePath below).
+// Loaded once at startup and rewritten on every death, panel close, and
+// settings change; every write merges against the last known on-disk
 // values (see diskState) so a save can never regress a number another
 // writer already persisted.
 Panel {
@@ -69,54 +69,59 @@ Panel {
   property bool gameOver: false
   property bool endlessMode: false
   property bool wallsWrap: false
+  property bool levelTransition: false
+  property int completedLevel: 0
+  property int levelSeconds: 0
+  property int displayedLevel: 1
 
   readonly property int pointsPerLevel: 12
-  readonly property int maxLevel: 50
-  // Levels 1-25 cost a flat pointsPerLevel each. Past that, every further
-  // level costs one more point than the last (26 needs 13 more, 27 needs
-  // 14 more, ...), so the climb past 25 gradually gets longer instead of
-  // the difficulty plateauing while the pace stays flat forever.
-  readonly property int flatLevelCap: 25
+  readonly property int layoutsPerCycle: 8
 
-  // levelThresholds[i] is the score at which level (i + 1) is reached, so
-  // levelThresholds[0] === 0 (level 1) through levelThresholds[maxLevel-1]
-  // (level maxLevel).
-  readonly property var levelThresholds: {
-    var arr = [0]
-    for (var lvl = 2; lvl <= maxLevel; lvl++) {
-      var prevLevel = lvl - 1
-      var cost = prevLevel < flatLevelCap ? pointsPerLevel : pointsPerLevel + (prevLevel - flatLevelCap + 1)
-      arr.push(arr[arr.length - 1] + cost)
-    }
-    return arr
+  // The eight obstacle layouts repeat forever. Each new cycle adds one food
+  // to every level's target and speeds the snake up by 7ms, down to a
+  // playable 55ms floor.
+  function levelCycle(lvl) {
+    return lvl <= 1 ? 0 : Math.floor((lvl - 2) / layoutsPerCycle)
+  }
+
+  function pointsForLevel(lvl) {
+    return pointsPerLevel + levelCycle(lvl)
+  }
+
+  function scoreForLevel(lvl) {
+    var total = 0
+    for (var current = 1; current < lvl; current++) total += pointsForLevel(current)
+    return total
   }
 
   function levelForScore(s) {
-    var arr = levelThresholds
     var lvl = 1
-    for (var i = 1; i < arr.length; i++) {
-      if (s < arr[i]) break
-      lvl = i + 1
+    var remaining = s
+    while (remaining >= pointsForLevel(lvl)) {
+      remaining -= pointsForLevel(lvl)
+      lvl += 1
     }
     return lvl
   }
 
   readonly property int level: root.endlessMode ? 1 : levelForScore(score)
-  readonly property var obstacles: root.endlessMode ? [] : obstaclesForLevel(level)
+  readonly property var obstacles: root.endlessMode ? [] : obstaclesForLevel(displayedLevel)
+  readonly property int tickInterval: root.endlessMode ? 140 : Math.max(55, 140 - levelCycle(level) * 7)
   readonly property real levelProgress: {
-    if (root.endlessMode || level >= maxLevel) return 1.0
-    var base = levelThresholds[level - 1]
-    var next = levelThresholds[level]
-    return Math.max(0, Math.min(1, (score - base) / (next - base)))
+    if (root.endlessMode) return 1.0
+    var base = scoreForLevel(level)
+    return Math.max(0, Math.min(1, (score - base) / pointsForLevel(level)))
   }
 
   function toggleMode() {
+    running = false
     endlessMode = !endlessMode
     resetGame()
   }
 
   function toggleWallsWrap() {
     wallsWrap = !wallsWrap
+    saveState()
   }
 
   // Endless has no next level to show progress toward, so it gets a running
@@ -145,6 +150,66 @@ Panel {
     if (m > 0) return m + "m" + s + "s"
     return s + "s"
   }
+
+  // Rolled once when a level is cleared. Every line includes the completed
+  // level and its active playtime, so the overlay always delivers the useful
+  // news before immediately undermining it.
+  readonly property var levelCompleteQuips: [
+    "Level {level} cleared in {time}. Productivity remains at zero.",
+    "You won level {level} in {time}. The build is still compiling.",
+    "Level {level}: defeated in {time}. Please update your résumé.",
+    "A blistering {time} for level {level}. Nobody had a stopwatch out.",
+    "Level {level} took {time}. MacGyver would've used fewer apples.",
+    "Level {level} cleared in {time}. The snake requests a raise.",
+    "You escaped level {level} in {time}. Your inbox did not escape you.",
+    "Level {level}, done in {time}. History declines to comment.",
+    "Level {level} surrendered after {time}. A brave tactical retreat.",
+    "Level {level} won in {time}. Confetti remains out of scope.",
+    "Only {time} for level {level}. The Nokia 3310 nods respectfully.",
+    "Level {level} cleared in {time}. Captain's Log: somehow adequate.",
+    "You beamed through level {level} in {time}. Transporter buffer intact.",
+    "Level {level} lasted {time}. Its family has been notified.",
+    "Level {level}: {time}. Fast enough to avoid meaningful reflection.",
+    "You conquered level {level} in {time}. The wall union is furious.",
+    "Level {level} cleared in {time}. Please hold your applause indefinitely.",
+    "A clean {time} on level {level}. Clean-ish. We didn't record it.",
+    "Level {level} fell in {time}. Donkey Kong threw one pity barrel.",
+    "You won level {level} in {time}. Your real work remains undefeated.",
+    "Level {level}: completed in {time}. Achievement value: negligible.",
+    "Resistance was futile for level {level}. It lasted {time}.",
+    "Level {level} cleared in {time}. The agent may have finished without you.",
+    "A heroic {time} victory over level {level}. Heroism sold separately.",
+    "Level {level} took {time}. The Prime Directive remains technically unbroken.",
+    "Level {level} cleared in {time}. Your manager sensed a disturbance.",
+    "You won level {level} in {time}. Stand by for no rewards whatsoever.",
+    "Level {level}: gone in {time}. It had so much left to give.",
+    "A deeply average {time} victory over level {level}. Inspirational.",
+    "Level {level} cleared in {time}. The shareholders remain cautiously indifferent.",
+    "You finished level {level} in {time}. This meeting could have been an email.",
+    "Level {level} survived for {time}. Thoughts and prayers.",
+    "Level {level}: beaten in {time}. The leaderboard is just you, by the way.",
+    "You gave level {level} {time} of your best procrastination.",
+    "Level {level} cleared in {time}. Please return to pretending to work.",
+    "A decisive {time} win on level {level}. The decision was mostly luck.",
+    "Level {level} completed in {time}. Your keyboard would like a break.",
+    "You outsmarted level {level} in {time}. It is a grid of rectangles.",
+    "Level {level} cleared in {time}. This will look excellent on no performance review.",
+    "Level {level}: {time}. Several pixels were mildly inconvenienced.",
+    "You won level {level} in {time}. A tiny parade has been cancelled.",
+    "Level {level} cleared in {time}. The apples have filed a complaint.",
+    "A stunning {time} on level {level}. Stunningly difficult to care about.",
+    "Level {level} folded after {time}. Negotiations were brief.",
+    "You completed level {level} in {time}. The cloud bill is unchanged.",
+    "Level {level} cleared in {time}. Somewhere, a sprint goal quietly slips.",
+    "Only {time} to beat level {level}. Imagine what you could do with a purpose.",
+    "Level {level}: won in {time}. Quality assurance found no quality.",
+    "You cleared level {level} in {time}. The snake calls that synergy.",
+    "Level {level} took {time}. Your terminal has seen enough."
+  ]
+  property string levelCompleteTemplate: ""
+  readonly property string levelCompleteMessage: levelCompleteTemplate === "" ? "" : levelCompleteTemplate
+    .replace("{time}", formatDuration(levelSeconds))
+    .replace("{level}", completedLevel)
 
   // One-liners for the game-over screen. {time}/{score}/{level} get
   // substituted with the run that just ended (see fillGameOverTemplate()).
@@ -261,18 +326,16 @@ Panel {
       .replace("{level}", level)
   }
 
-  // Deterministic wall layouts for levels 2-50: 8 obstacle shapes, cycling
-  // every 8 levels. The gap shrinks each cycle for the first 3 (levels
-  // 2-25), then holds at its 2-cell floor for the rest, so levels 26+ keep
-  // rotating through the same 8 shapes at the max difficulty rather than
-  // becoming impossible. Level 1 is open.
+  // Deterministic wall layouts from level 2 onward: 8 obstacle shapes cycle
+  // forever. The gap shrinks for the first 3 cycles, then holds at its
+  // 2-cell floor so later levels remain possible. Level 1 is open.
   function obstaclesForLevel(lvl) {
     if (lvl <= 1) return []
     var cx = Math.floor(cols / 2)
     var cy = Math.floor(rows / 2)
-    var tier = Math.floor((lvl - 2) / 8)
+    var tier = levelCycle(lvl)
     var gap = Math.max(2, 4 - tier)
-    var kind = (lvl - 2) % 8
+    var kind = (lvl - 2) % layoutsPerCycle
     var cells = []
 
     function hbar(y, gapX, x0, x1) {
@@ -411,23 +474,33 @@ Panel {
   }
 
   function resetGame() {
+    running = false
+    levelTransitionTimer.stop()
+    levelBoardTransition.stop()
+    boardContent.opacity = 1
     score = 0
+    displayedLevel = level
     elapsedSeconds = 0
+    levelSeconds = 0
+    levelTransition = false
+    completedLevel = 0
+    levelCompleteTemplate = ""
     gameOver = false
     gameOverTemplate = ""
     running = true
     respawnSnake()
   }
 
-  // Leveling up mid-run gives the snake a fresh, obstacle-clear start on
-  // the new layout instead of leaving it to navigate straight into a wall
-  // that just appeared. Guarded by `running` so this doesn't also fire from
-  // resetGame()'s own score reset (that already calls respawnSnake once).
-  // Food skin is left alone here - it's a player choice (see
-  // cycleFoodStyle()), not something a level change should touch.
+  // Keep the completed layout on screen long enough to fade it out, then
+  // swap and respawn while the board content is invisible. Guarded by
+  // `running` so resetGame()'s score reset doesn't start a transition.
   onLevelChanged: {
-    if (!running) return
-    respawnSnake()
+    if (!running || endlessMode) return
+    completedLevel = level - 1
+    levelCompleteTemplate = levelCompleteQuips[Math.floor(Math.random() * levelCompleteQuips.length)]
+    levelTransition = true
+    levelBoardTransition.restart()
+    levelTransitionTimer.restart()
   }
 
   // Picks uniformly among cells the snake and the current level's obstacles
@@ -484,7 +557,7 @@ Panel {
 
     if (ateFood) {
       score += 1
-      spawnFood()
+      if (!levelTransition) spawnFood()
     }
   }
 
@@ -492,7 +565,7 @@ Panel {
   // nothing is queued yet), so it rejects reversing into the snake's own
   // neck without discarding a second legitimate turn queued right after it.
   function turn(dx, dy) {
-    if (gameOver) return
+    if (gameOver || levelTransition) return
     var last = directionQueue.length > 0 ? directionQueue[directionQueue.length - 1] : direction
     if (dx === -last.x && dy === -last.y) return
     if (dx === last.x && dy === last.y) return
@@ -501,6 +574,7 @@ Panel {
   }
 
   function togglePause() {
+    if (levelTransition) return
     if (gameOver) { resetGame(); return }
     running = !running
   }
@@ -530,7 +604,8 @@ Panel {
       bestLevels: typeof d.bestLevels === "number" ? d.bestLevels : (typeof d.best === "number" ? d.best : 0),
       bestEndless: typeof d.bestEndless === "number" ? d.bestEndless : 0,
       totalSeconds: typeof d.totalSeconds === "number" ? d.totalSeconds : 0,
-      foodStyleIndex: typeof d.foodStyleIndex === "number" ? Math.floor(d.foodStyleIndex) : -1
+      foodStyleIndex: typeof d.foodStyleIndex === "number" ? Math.floor(d.foodStyleIndex) : -1,
+      wallsWrap: typeof d.wallsWrap === "boolean" ? d.wallsWrap : false
     }
   }
 
@@ -548,6 +623,7 @@ Panel {
     if (diskState.totalSeconds > totalSeconds) totalSeconds = diskState.totalSeconds
     if (diskState.foodStyleIndex >= 0 && diskState.foodStyleIndex < foodStyles.length)
       foodStyleIndex = diskState.foodStyleIndex
+    wallsWrap = diskState.wallsWrap
     stateLoaded = true
   }
 
@@ -561,11 +637,12 @@ Panel {
     bestEndless = Math.max(bestEndless, d.bestEndless)
     totalSeconds = Math.max(totalSeconds, d.totalSeconds)
     var payload = {
-      version: 2,
+      version: 3,
       bestLevels: root.bestLevels,
       bestEndless: root.bestEndless,
       totalSeconds: root.totalSeconds,
-      foodStyleIndex: root.foodStyleIndex
+      foodStyleIndex: root.foodStyleIndex,
+      wallsWrap: root.wallsWrap
     }
     diskState = extractState(payload)
     stateFile.setText(JSON.stringify(payload, null, 2) + "\n")
@@ -603,19 +680,56 @@ Panel {
   implicitHeight: button.implicitHeight
 
   Timer {
-    interval: 140
+    interval: root.tickInterval
     repeat: true
-    running: root.opened && root.running && !root.gameOver
+    running: root.opened && root.running && !root.gameOver && !root.levelTransition
     onTriggered: root.tick()
+  }
+
+  SequentialAnimation {
+    id: levelBoardTransition
+
+    NumberAnimation {
+      target: boardContent
+      property: "opacity"
+      from: 1
+      to: 0
+      duration: 400
+      easing.type: Easing.InOutCubic
+    }
+    ScriptAction {
+      script: {
+        root.displayedLevel = root.level
+        root.respawnSnake()
+      }
+    }
+    NumberAnimation {
+      target: boardContent
+      property: "opacity"
+      from: 0
+      to: 1
+      duration: 500
+      easing.type: Easing.OutCubic
+    }
   }
 
   Timer {
     interval: 1000
     repeat: true
-    running: root.opened && root.running && !root.gameOver
+    running: root.opened && root.running && !root.gameOver && !root.levelTransition
     onTriggered: {
       root.elapsedSeconds += 1
       root.totalSeconds += 1
+      if (!root.endlessMode) root.levelSeconds += 1
+    }
+  }
+
+  Timer {
+    id: levelTransitionTimer
+    interval: 2400
+    onTriggered: {
+      root.levelTransition = false
+      root.levelSeconds = 0
     }
   }
 
@@ -735,46 +849,51 @@ Panel {
           radius: 4
           clip: true
 
-          Repeater {
-            model: root.obstacles
-            Rectangle {
-              required property var modelData
-              x: modelData.x * root.cellSize + 1
-              y: modelData.y * root.cellSize + 1
-              width: root.cellSize - 2
-              height: root.cellSize - 2
-              radius: 1
-              color: Color.muted
-              opacity: 0.8
-            }
-          }
+          Item {
+            id: boardContent
+            anchors.fill: parent
 
-          Repeater {
-            model: root.snake
-            Rectangle {
-              required property var modelData
-              required property int index
-              x: modelData.x * root.cellSize + 1
-              y: modelData.y * root.cellSize + 1
-              width: root.cellSize - 2
-              height: root.cellSize - 2
-              radius: 3
-              color: index === 0 ? root.bar.foreground : Color.accent
+            Repeater {
+              model: root.obstacles
+              Rectangle {
+                required property var modelData
+                x: modelData.x * root.cellSize + 1
+                y: modelData.y * root.cellSize + 1
+                width: root.cellSize - 2
+                height: root.cellSize - 2
+                radius: 1
+                color: Color.muted
+                opacity: 0.8
+              }
             }
-          }
 
-          Text {
-            visible: !!root.food
-            x: root.food ? root.food.x * root.cellSize : 0
-            y: root.food ? root.food.y * root.cellSize : 0
-            width: root.cellSize
-            height: root.cellSize
-            text: root.currentFoodStyle.text
-            color: root.currentFoodStyle.color
-            font.family: root.bar.fontFamily
-            font.pixelSize: root.cellSize
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+            Repeater {
+              model: root.snake
+              Rectangle {
+                required property var modelData
+                required property int index
+                x: modelData.x * root.cellSize + 1
+                y: modelData.y * root.cellSize + 1
+                width: root.cellSize - 2
+                height: root.cellSize - 2
+                radius: 3
+                color: index === 0 ? root.bar.foreground : Color.accent
+              }
+            }
+
+            Text {
+              visible: !!root.food
+              x: root.food ? root.food.x * root.cellSize : 0
+              y: root.food ? root.food.y * root.cellSize : 0
+              width: root.cellSize
+              height: root.cellSize
+              text: root.currentFoodStyle.text
+              color: root.currentFoodStyle.color
+              font.family: root.bar.fontFamily
+              font.pixelSize: root.cellSize
+              horizontalAlignment: Text.AlignHCenter
+              verticalAlignment: Text.AlignVCenter
+            }
           }
 
           // Easter egg: click the board to skin the food as a different
@@ -787,7 +906,7 @@ Panel {
 
           Rectangle {
             anchors.fill: parent
-            visible: root.gameOver || !root.running
+            visible: root.gameOver || !root.running || root.levelTransition
             color: Qt.rgba(0, 0, 0, 0.55)
 
             Column {
@@ -796,7 +915,7 @@ Panel {
 
               Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: root.gameOver ? "GAME OVER" : "PAUSED"
+                text: root.levelTransition ? ("LEVEL " + root.completedLevel + " CLEARED") : (root.gameOver ? "GAME OVER" : "PAUSED")
                 color: "#ffffff"
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.heading
@@ -805,16 +924,16 @@ Panel {
 
               Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: root.gameOver ? "Space to restart" : "Space to resume"
+                text: root.levelTransition ? ("Level " + root.level + " incoming") : (root.gameOver ? "Space to restart" : "Space to resume")
                 color: "#ffffff"
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
               }
 
               Text {
-                visible: root.gameOver
+                visible: root.gameOver || root.levelTransition
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: root.gameOverMessage
+                text: root.levelTransition ? root.levelCompleteMessage : root.gameOverMessage
                 color: "#ffffff"
                 opacity: 0.7
                 font.family: root.bar.fontFamily

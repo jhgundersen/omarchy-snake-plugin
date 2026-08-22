@@ -59,15 +59,16 @@ Two modes, swap with `m`:
 
 - **Levels** (default) — the header shows your current level and a thin
   progress bar tracks score toward the next one. You start on **Level 1**
-  with an open board; each level up to 25 takes 12 points, then the cost
-  itself climbs by one point per level (26 takes 13, 27 takes 14, ...) up
-  to **Level 50**. From level 2 on, each level lays out a different wall
+  with an open board. From level 2 on, each level lays out a different wall
   pattern to route around — a bar with a gap, a cross, a ring, pillars,
-  and a few more — cycling through 8 shapes, with the gaps getting
-  narrower for the first three cycles (up to level 25) before holding at
-  their tightest for the rest. Leveling up respawns the snake on a clear
-  patch of the new layout (score and best carry over; the food skin
-  doesn't change).
+  and a few more — cycling forever through 8 shapes. Each new cycle adds
+  one point to the score needed per level and speeds up the snake, down to
+  a playable speed floor. The obstacle gaps narrow for the first three
+  cycles before holding at their tightest. Between levels, the completed
+  board fades into the next layout behind a brief victory overlay that tells
+  you how long the level took and offers an appropriately underwhelming
+  celebration. Leveling up respawns the snake on a clear patch of the new
+  layout (score and best carry over; cosmetic settings don't change).
 - **Endless** — the classic game: open board, no obstacles, no leveling,
   score just climbs.
 
@@ -75,9 +76,10 @@ Two modes, swap with `m`:
 
 Your best score (tracked separately for Levels and Endless, since they're
 not really comparable), lifetime playtime (shown off in some of the
-game-over lines), and chosen food skin survive shell restarts — kept as
-JSON in `~/.local/state/omarchy/plugins/jhgundersen.snake/state.json`,
-written on death, on closing the panel, and on changing the food skin.
+game-over lines), chosen food skin, and border setting survive shell
+restarts — kept as JSON in
+`~/.local/state/omarchy/plugins/jhgundersen.snake/state.json`, written on
+death, on closing the panel, and on changing a remembered setting.
 
 ## Files
 
