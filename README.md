@@ -16,12 +16,9 @@ widgets: one bar icon, one popup panel.
 omarchy plugin add https://github.com/jhgundersen/omarchy-snake-plugin.git --enable
 ```
 
-Or, to hack on it locally, clone it straight into your plugins directory:
-
-```sh
-git clone https://github.com/jhgundersen/omarchy-snake-plugin.git ~/.config/omarchy/plugins/jhgundersen.snake
-omarchy plugin enable jhgundersen.snake
-```
+For local development, install it with the command above and edit the checkout
+at `~/.config/omarchy/plugins/jhgundersen.snake`. Omarchy reloads plugin changes
+automatically.
 
 ## Uninstall
 
